@@ -121,41 +121,25 @@ server <- function(input, output, session){
       {if("PINCP" %in% corr_vars) filter(., AGEP > 18) else .} %>%
       {if("JWMNP" %in% corr_vars) filter(., !is.na(JWMNP)) else .}
 
-    # Debugging output
-    # cat("Number of rows in subsetted_data: ", nrow(subsetted_data), "\n")
-    # Validate the number of rows before sampling
-    # if(nrow(subsetted_data) == 0){
-    #   shinyalert(title = "No data", "No data available for the selected filters.")
-    #   return()
-    # }
-    ## Yes. Rows exist
 
     corr_n <- input$corr_n
-    # if(corr_n > nrow(subsetted_data)){
-    #   shinyalert(title = "Sample Size Error", "Sample size exceeds available data. Please adjust sample size.")
-    #   return()
-    # }
-    ## BUG-9001: Originally created a slider with a range between 20-500. This returned a vector of 2, not a value of 1
 
     # Ensure there's enough data to sample
-    index <- sample(1:nrow(subsetted_data), size = corr_n, replace = TRUE,
+    index <- sample(1:nrow(subsetted_data),
+                    size = corr_n,
+                    replace = TRUE,
                     prob = subsetted_data$PWGTP / sum(subsetted_data$PWGTP))
 
-    sampled_data <- subsetted_data[index, ]
-    cat("Number of rows in sampled_data: ", nrow(sampled_data), "\n")
-
+    # sampled_data <- subsetted_data[index, ]
     # Store the sampled data and calculated correlation
-    sample_corr$corr_data <- sampled_data
-    sample_corr$corr_truth <- cor(sampled_data[[input$corr_x]], sampled_data[[input$corr_y]], use = "complete.obs")
+    sample_corr$corr_data <- subsetted_data[index, ]
+    sample_corr$corr_truth <- cor(sample_corr$corr_data |> select(all_of(corr_vars)))[1,2]
 
-    cat("Number of rows in sample_corr$corr_data: ", nrow(sample_corr$corr_data), "\n")
   })
   # Create the scatter plot using ggplot2
   output$corr_plot <- renderPlot({
     validate(
-      need(!is.null(sample_corr$corr_data), "Please select your variables, subset, and click the 'Get a Sample!' button."),
-      need(!is.null(input$corr_x), "Please select the X variable."),
-      need(!is.null(input$corr_y), "Please select the Y variable.")
+      need(!is.null(sample_corr$corr_data), "Please select your variables, subset, and click the 'Get a Sample!' button.")
     )
 
     ggplot(sample_corr$corr_data, aes_string(x = input$corr_x, y = input$corr_y)) +
