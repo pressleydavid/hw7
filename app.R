@@ -15,18 +15,20 @@ ui <- fluidPage(
       selectizeInput("corr_y", "y Variable", selected = NULL, choices = numeric_vars),
 
       h2("Select a Sample Size"),
-      radioButtons("hhl_corr", "Household Language", c("English Only" = "english",
-                                                       "Spanish" = "spanish")),
-      radioButtons("fs_corr", "Household Language", c("Yes" = "yes",
-                                                       "No" = "no",
-                                                       "All" = "all")),
-
+      radioButtons("hhl_corr", "Household Language", c("All" = "all",
+                                                       "English Only" = "english",
+                                                       "Spanish" = "spanish",
+                                                       "Other" = "other")),
+      radioButtons("fs_corr", "SNAP Recepient", c("All" = "all",
+                                                      "Yes" = "yes",
+                                                       "No" = "no"
+                                                       )),
       radioButtons("schl_corr", "Educational attainment", c("All" = "all",
                                                       "High School Not Completed" = "no_hs",
                                                       "High School or GED" = "hs",
-                                                      "College Degree" = ""
+                                                      "College Degree" = "college"
                                                       )),
-      sliderInput("corr_n", label = NULL, min = 20, max = 500, value = c(20,500)),
+      sliderInput("corr_n", label = NULL, min = 20, max = 500, value = 20),
       actionButton("corr_sample", "Get a Sample!")
     ),
 
@@ -55,6 +57,7 @@ my_sample <- readRDS("my_sample_temp.rds")
 server <- function(input, output, session){
 
   #Create a reactiveValues object called sample_corr
+  #Two elements (corr_data = NULL and corr_truth = NULL)
   sample_corr <- reactiveValues(corr_data = NULL, corr_truth = NULL)
 
   # Update input boxes so they can't choose the same variable
@@ -70,7 +73,6 @@ server <- function(input, output, session){
 
   # Use an observeEvent() to look for the action button (corr_sample)
   observeEvent(input$corr_sample, {
-
     # Subset logic for hhl, fs, and schl
     if(input$hhl_corr == "all"){
       hhl_sub <- HHLvals
@@ -78,7 +80,7 @@ server <- function(input, output, session){
       hhl_sub <- HHLvals["1"]
     } else if(input$hhl_corr == "spanish"){
       hhl_sub <- HHLvals["2"]
-    } else {
+    } else if(input$hhl_corr == "other"){
       hhl_sub <- HHLvals[c("0", "3", "4", "5")]
     }
 
@@ -86,7 +88,7 @@ server <- function(input, output, session){
       fs_sub <- FSvals
     } else if(input$fs_corr == "yes"){
       fs_sub <- FSvals["1"]
-    } else {
+    } else if(input$fs_corr == "no"){
       fs_sub <- FSvals["2"]
     }
 
@@ -96,19 +98,19 @@ server <- function(input, output, session){
       schl_sub <- SCHLvals[as.character(0:15)]
     } else if(input$schl_corr == "hs"){
       schl_sub <- SCHLvals[as.character(16:19)]
-    } else {
+    } else if(input$schl_corr == "college"){
       schl_sub <- SCHLvals[as.character(20:24)]
     }
 
     corr_vars <- c(input$corr_x, input$corr_y)
 
     # Subset the data
-    subsetted_data <- my_sample %>%
+    subsetted_data <- my_sample |>
       filter(
         HHLfac %in% hhl_sub,
         FSfac %in% fs_sub,
         SCHLfac %in% schl_sub
-      ) %>%
+      ) %>% #make sure numeric variables are in appropriate range, must use %>% here for {} to work
       {if("WKHP" %in% corr_vars) filter(., WKHP > 0) else .} %>%
       {if("VALP" %in% corr_vars) filter(., !is.na(VALP)) else .} %>%
       {if("TAXAMT" %in% corr_vars) filter(., !is.na(TAXAMT)) else .} %>%
@@ -120,20 +122,20 @@ server <- function(input, output, session){
       {if("JWMNP" %in% corr_vars) filter(., !is.na(JWMNP)) else .}
 
     # Debugging output
-    cat("Number of rows in subsetted_data: ", nrow(subsetted_data), "\n")
-
+    # cat("Number of rows in subsetted_data: ", nrow(subsetted_data), "\n")
     # Validate the number of rows before sampling
-    if(nrow(subsetted_data) == 0){
-      shinyalert(title = "No data", "No data available for the selected filters.")
-      return()
-    }
+    # if(nrow(subsetted_data) == 0){
+    #   shinyalert(title = "No data", "No data available for the selected filters.")
+    #   return()
+    # }
+    ## Yes. Rows exist
 
-    # Ensure input$corr_n is within valid range
     corr_n <- input$corr_n
-    if(corr_n > nrow(subsetted_data)){
-      shinyalert(title = "Sample Size Error", "Sample size exceeds available data. Please adjust sample size.")
-      return()
-    }
+    # if(corr_n > nrow(subsetted_data)){
+    #   shinyalert(title = "Sample Size Error", "Sample size exceeds available data. Please adjust sample size.")
+    #   return()
+    # }
+    ## BUG-9001: Originally created a slider with a range between 20-500. This returned a vector of 2, not a value of 1
 
     # Ensure there's enough data to sample
     index <- sample(1:nrow(subsetted_data), size = corr_n, replace = TRUE,
@@ -148,7 +150,6 @@ server <- function(input, output, session){
 
     cat("Number of rows in sample_corr$corr_data: ", nrow(sample_corr$corr_data), "\n")
   })
-
   # Create the scatter plot using ggplot2
   output$corr_plot <- renderPlot({
     validate(
